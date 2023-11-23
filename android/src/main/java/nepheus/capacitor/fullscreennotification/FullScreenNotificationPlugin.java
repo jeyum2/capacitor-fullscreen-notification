@@ -41,6 +41,14 @@ public class FullScreenNotificationPlugin extends Plugin {
             }
             ret.put("isNotificationActive", isNotificationActive);
             String timeoutString = intent.getStringExtra("timeout");
+            String roomId = intent.getStringExtra("roomId");
+            if (roomId != null) {
+                ret.put("roomId", roomId);
+            }
+            String userName = intent.getStringExtra("userName");
+            if (userName != null) {
+                ret.put("userName", userName);
+            }
             if (timeoutString != null) {
                 ret.put("timeout", Integer.parseInt(timeoutString));
             }

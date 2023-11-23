@@ -3,11 +3,20 @@ package nepheus.capacitor.fullscreennotification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.PowerManager;
 import android.text.TextUtils;
+import android.widget.RemoteViews;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
@@ -30,6 +39,8 @@ import java.util.Objects;
 public class MessagingService extends com.capacitorjs.plugins.pushnotifications.MessagingService {
     public static final int NOTIFICATION_ID = 33330;
     private static final int PENDING_INTENT_REQUEST_CODE = 33331;
+    private static final int PENDING_INTENT_ANSWER_CODE = 33332;
+    private static final int PENDING_INTENT_REJECT_CODE = 33333;
 
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
@@ -42,103 +53,18 @@ public class MessagingService extends com.capacitorjs.plugins.pushnotifications.
         super.onNewToken(s);
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.O)
     private void processPush(RemoteMessage remoteMessage) {
         Map<String, String> data = remoteMessage.getData();
-        String fullScreenId = data.get("fullScreenId") != null ? Objects.requireNonNull(data.get("fullScreenId")) : null;
-
-        if (!TextUtils.isEmpty(fullScreenId) && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-
-            // Create settings
-            String title = data.get("title") != null ? Objects.requireNonNull(data.get("title")) : null;
-            String text = data.get("text") != null ? Objects.requireNonNull(data.get("text")) : null;
-            Integer timeout = data.get("timeout") != null ? Integer.parseInt(Objects.requireNonNull(data.get("timeout"))) : null;
-            JSONArray actionButtons = new JSONArray();
-            if (data.get("actionButtons") != null) {
-                try {
-                    actionButtons = new JSONArray(Objects.requireNonNull(data.get("actionButtons")));
-                } catch (JSONException e) {
-                    Logger.error("Could not deserialize buttons", e);
-                }
+        try {
+            JSONObject payload = new JSONObject(data.get("payload"));
+            String fn = payload.getString("fn");
+            if ("call_new".equals(fn)) {
+                processCallNew(remoteMessage);
             }
-
-            // Create channel
-            NotificationChannel channel = createChannel(manager, data);
-
-            // Create notification
-            JSObject notificationIntentData = new JSObject();
-            notificationIntentData.put("fullScreenId", fullScreenId);
-            if (timeout != null) {
-                notificationIntentData.put("timeout", timeout);
-            }
-            NotificationCompat.Builder notification = new NotificationCompat.Builder(getApplicationContext(), channel.getId())
-                    .setPriority(NotificationCompat.PRIORITY_HIGH)
-                    .setCategory(NotificationCompat.CATEGORY_CALL)
-                    .setSmallIcon(getResources().getIdentifier("ic_launcher", "mipmap", getPackageName()))
-                    .setContentTitle(title)
-                    .setContentText(text)
-                    .setAutoCancel(true)
-                    .setOngoing(true)
-                    .setFullScreenIntent(createPendingIntent(this, PENDING_INTENT_REQUEST_CODE, notificationIntentData), true);
-
-            if (timeout != null) {
-                notification.setTimeoutAfter(timeout);
-            }
-
-            // Add action buttons to notification
-            for (int i = 0; i < actionButtons.length(); i++) {
-                try {
-                    JSONObject actionButton = actionButtons.getJSONObject(i);
-                    JSObject actionIntentData = new JSObject();
-                    actionIntentData.put("fullScreenId", fullScreenId);
-                    if (timeout != null) {
-                        actionIntentData.put("timeout", timeout);
-                    }
-                    actionIntentData.put("actionId", actionButton.getString("id"));
-                    notification.addAction(
-                            0,
-                            actionButton.getString("text"),
-                            createPendingIntent(this, PENDING_INTENT_REQUEST_CODE + i + 1, actionIntentData)
-                    );
-                } catch (JSONException e) {
-                    Logger.error("Could not add action button", e);
-                }
-            }
-
-            manager.notify(NOTIFICATION_ID, notification.build());
+        } catch (JSONException e) {
+            Logger.info("push err " + e);
         }
-    }
-
-    @RequiresApi(api = Build.VERSION_CODES.O)
-    private NotificationChannel createChannel(NotificationManager manager, Map<String, String> data) {
-        String channelId = data.get("channelId") != null ? Objects.requireNonNull(data.get("channelId")) : null;
-        String channelName = data.get("channelName") != null ? Objects.requireNonNull(data.get("channelName")) : null;
-        String channelDescription = data.get("channelDescription") != null ? Objects.requireNonNull(data.get("channelDescription")) : null;
-        String vibrationPatternString = data.get("vibrationPattern") != null ? Objects.requireNonNull(data.get("vibrationPattern")) : null;
-
-        NotificationChannel channel = new NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH);
-        channel.setDescription(channelDescription);
-
-        if (vibrationPatternString != null) {
-            try {
-                ArrayList<Long> s = new ArrayList<>(List.of());
-                JSONArray arr = new JSONArray(vibrationPatternString);
-                for (int i = 0; i < arr.length(); i++) {
-                    s.add(arr.getLong(i));
-                }
-                long[] pattern = new long[s.size()];
-                for (int i = 0; i < s.size(); i++) {
-                    pattern[i] = s.get(i);
-                }
-                channel.setVibrationPattern(pattern);
-            } catch (JSONException e) {
-                Logger.error("Could not deserialize vibrationPattern", e);
-            }
-        }
-
-        manager.createNotificationChannel(channel);
-
-        return channel;
     }
 
     private PendingIntent createPendingIntent(Context context, int requestCode, JSONObject data) {
@@ -161,4 +87,73 @@ public class MessagingService extends com.capacitorjs.plugins.pushnotifications.
         }
         return PendingIntent.getActivity(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
     }
+    //region Call
+    @RequiresApi(api = Build.VERSION_CODES.O)
+    private NotificationChannel createCallChannel(NotificationManager manager) {
+        String channelId = this.getPackageName() + ".callnew";
+        String channelName = "돌봄앱";
+        String channelDescription = "돌봄앱";
+        NotificationChannel channel = new NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription(channelDescription);
+        Uri soundUri = Uri.parse(
+                ContentResolver.SCHEME_ANDROID_RESOURCE + "://" + getPackageName() + "/" + R.raw.ring20s);
+        channel.setSound(soundUri, new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build());
+        manager.createNotificationChannel(channel);
+        return channel;
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.O)
+    private void processCallNew(RemoteMessage remoteMessage) throws JSONException {
+        Map<String, String> data = remoteMessage.getData();
+        JSONObject payload = new JSONObject(data.get("payload"));
+
+        String fullScreenId = remoteMessage.getMessageId();
+        int defaultTimeout = 1 * 60 * 1000; // 1min
+        Integer timeout = data.get("timeout") == null ? defaultTimeout :
+                Integer.parseInt(Objects.requireNonNull(data.get("timeout")));
+
+        JSONObject caller = payload.getJSONObject("Caller");
+        String roomId = caller.getString("ConnectionId");
+        String userName = caller.getString("Username");
+
+        JSObject notificationIntentData = new JSObject();
+        notificationIntentData.put("fullScreenId", fullScreenId);
+        notificationIntentData.put("roomId", roomId);
+        notificationIntentData.put("userName", userName);
+        notificationIntentData.put("timeout", timeout);
+        notificationIntentData.put("actionId", "call_new");
+        PendingIntent fullScreenPendingIntent = createPendingIntent(this, PENDING_INTENT_REQUEST_CODE, notificationIntentData);
+        notificationIntentData.put("actionId", "answer");
+        PendingIntent pendingAnswerIntent = createPendingIntent(this, PENDING_INTENT_ANSWER_CODE, notificationIntentData);
+        notificationIntentData.put("actionId", "reject");
+        PendingIntent pendingRejectIntent = createPendingIntent(this, PENDING_INTENT_REJECT_CODE, notificationIntentData);
+
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationChannel channel = createCallChannel(manager);
+
+        // Setup RemoteView Noti
+        RemoteViews remoteView = new RemoteViews(getPackageName(), R.layout.incoming_call_noti);
+        remoteView.setTextViewText(R.id.caller_text, userName + "에게 전화가 왔습니다");
+        remoteView.setOnClickPendingIntent(R.id.answer_button, pendingAnswerIntent);
+        remoteView.setOnClickPendingIntent(R.id.reject_button, pendingRejectIntent);
+
+        NotificationCompat.Builder notification = new NotificationCompat.Builder(getApplicationContext(), channel.getId())
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setSmallIcon(getResources().getIdentifier("ic_launcher", "mipmap", getPackageName()))
+                .setCustomContentView(remoteView)
+                .setCustomBigContentView(remoteView)
+                .setCustomHeadsUpContentView(remoteView)
+                .setAutoCancel(true)
+                .setOngoing(true)
+                .setOnlyAlertOnce(false)
+                .setTimeoutAfter(timeout)
+                .setFullScreenIntent(fullScreenPendingIntent, true);
+        manager.notify(NOTIFICATION_ID, notification.build());
+        Utils.wake(this);
+    }
+    //endregion Call
 }
