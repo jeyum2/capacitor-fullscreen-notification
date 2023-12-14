@@ -138,12 +138,10 @@ Inside the data of the launch event, you can have the following data:
 ### cancelNotification()
 
 ```typescript
-cancelNotification() => any
+cancelNotification() => Promise<void>
 ```
 
 Cancel the current notification
-
-**Returns:** <code>any</code>
 
 --------------------
 
@@ -163,7 +161,7 @@ The parameter gives you the information if an action button has been clicked.
 | **`eventName`**    | <code>'launch'</code>                                       |
 | **`listenerFunc`** | <code><a href="#messagelistener">MessageListener</a></code> |
 
-**Returns:** <code>any</code>
+**Returns:** <code>Promise&lt;<a href="#pluginlistenerhandle">PluginListenerHandle</a>&gt; & <a href="#pluginlistenerhandle">PluginListenerHandle</a></code>
 
 --------------------
 
@@ -171,12 +169,10 @@ The parameter gives you the information if an action button has been clicked.
 ### removeAllListeners()
 
 ```typescript
-removeAllListeners() => any
+removeAllListeners() => Promise<void>
 ```
 
 Removes all listeners.
-
-**Returns:** <code>any</code>
 
 --------------------
 
@@ -186,9 +182,9 @@ Removes all listeners.
 
 #### PluginListenerHandle
 
-| Prop         | Type                      |
-| ------------ | ------------------------- |
-| **`remove`** | <code>() =&gt; any</code> |
+| Prop         | Type                                      |
+| ------------ | ----------------------------------------- |
+| **`remove`** | <code>() =&gt; Promise&lt;void&gt;</code> |
 
 
 ### Type Aliases
