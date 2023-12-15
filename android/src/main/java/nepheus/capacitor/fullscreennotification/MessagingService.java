@@ -108,7 +108,8 @@ public class MessagingService extends com.capacitorjs.plugins.pushnotifications.
     @RequiresApi(api = Build.VERSION_CODES.O)
     private void processCallNew(RemoteMessage remoteMessage) throws JSONException {
         Map<String, String> data = remoteMessage.getData();
-        JSONObject payload = new JSONObject(data.get("payload"));
+        String strPayload = data.get("payload");
+        JSONObject payload = new JSONObject(strPayload);
 
         String fullScreenId = remoteMessage.getMessageId();
         int defaultTimeout = 1 * 60 * 1000; // 1min
@@ -125,6 +126,7 @@ public class MessagingService extends com.capacitorjs.plugins.pushnotifications.
         notificationIntentData.put("userName", userName);
         notificationIntentData.put("timeout", timeout);
         notificationIntentData.put("actionId", "call_new");
+        notificationIntentData.put("payload", strPayload);
         PendingIntent fullScreenPendingIntent = createPendingIntent(this, PENDING_INTENT_REQUEST_CODE, notificationIntentData);
         notificationIntentData.put("actionId", "answer");
         PendingIntent pendingAnswerIntent = createPendingIntent(this, PENDING_INTENT_ANSWER_CODE, notificationIntentData);

@@ -56,6 +56,10 @@ public class FullScreenNotificationPlugin extends Plugin {
             if (actionId != null) {
                 ret.put("actionId", actionId);
             }
+            String payload = intent.getStringExtra("payload");
+            if (payload != null) {
+                ret.put("payload", payload);
+            }
             notifyListeners("launch", ret, true);
         }
     }
